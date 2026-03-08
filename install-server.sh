@@ -107,6 +107,7 @@ ensure_steam_user() {
 
   if ! id -u "${STEAM_USER}" >/dev/null 2>&1; then
     useradd -m -s /bin/bash "${STEAM_USER}"
+    sudo -u "${STEAM_USER}" mkdir -p "${STEAM_HOME}/.steam"
     echo "Created user: ${STEAM_USER}"
   else
     echo "User already exists: ${STEAM_USER}"
@@ -118,6 +119,9 @@ install_server() {
 
   mkdir -p "${INSTALL_DIR}"
   chown -R "${STEAM_USER}:${STEAM_USER}" "${INSTALL_DIR}"
+
+  # Ensure Steam's expected home directories exist first
+  sudo -u "${STEAM_USER}" mkdir -p "${STEAM_HOME}/.steam"
 
   local steamcmd_bin=""
   if command -v steamcmd >/dev/null 2>&1; then
@@ -142,18 +146,52 @@ setup_steamclient_link() {
 
   sudo -u "${STEAM_USER}" bash -lc '
     set -euo pipefail
-    mkdir -p "$HOME/.steam/sdk64"
 
-    if [[ -f "$HOME/steamcmd/linux64/steamclient.so" ]]; then
-      ln -sfn "$HOME/steamcmd/linux64/steamclient.so" "$HOME/.steam/sdk64/steamclient.so"
-      echo "Linked from $HOME/steamcmd/linux64/steamclient.so"
-    elif [[ -f "/usr/lib/games/steamcmd/linux64/steamclient.so" ]]; then
-      ln -sfn "/usr/lib/games/steamcmd/linux64/steamclient.so" "$HOME/.steam/sdk64/steamclient.so"
-      echo "Linked from /usr/lib/games/steamcmd/linux64/steamclient.so"
-    else
-      echo "steamclient.so not found in expected locations."
-      exit 1
-    fi
+    mkdir -p "$HOME/.steam/sdk64"
+    mkdir -p "$HOME/.steam"
+
+    for candidate in \
+      "$HOME/Steam/linux64/steamclient.so" \
+      "$HOME/.local/share/Steam/linux64/steamclient.so" \
+      "$HOME/steamcmd/linux64/steamclient.so" \
+      "/usr/lib/games/steamcmd/linux64/steamclient.so" \
+      "/usr/lib/games/steamcmd/steamcmd.sh" \
+      "/usr/games/steamcmd"
+    do
+      if [[ -f "$candidate" ]]; then
+        case "$candidate" in
+          */steamcmd.sh)
+            base_dir="$(dirname "$candidate")"
+            if [[ -f "$base_dir/linux64/steamclient.so" ]]; then
+              ln -sfn "$base_dir/linux64/steamclient.so" "$HOME/.steam/sdk64/steamclient.so"
+              echo "Linked from $base_dir/linux64/steamclient.so"
+              exit 0
+            fi
+            ;;
+          */steamcmd)
+            base_dir="$(dirname "$candidate")"
+            if [[ -f "$base_dir/linux64/steamclient.so" ]]; then
+              ln -sfn "$base_dir/linux64/steamclient.so" "$HOME/.steam/sdk64/steamclient.so"
+              echo "Linked from $base_dir/linux64/steamclient.so"
+              exit 0
+            fi
+            ;;
+          *)
+            ln -sfn "$candidate" "$HOME/.steam/sdk64/steamclient.so"
+            echo "Linked from $candidate"
+            exit 0
+            ;;
+        esac
+      fi
+    done
+
+    echo "steamclient.so not found in expected locations."
+    echo "Searched:"
+    echo "  $HOME/Steam/linux64/steamclient.so"
+    echo "  $HOME/.local/share/Steam/linux64/steamclient.so"
+    echo "  $HOME/steamcmd/linux64/steamclient.so"
+    echo "  /usr/lib/games/steamcmd/linux64/steamclient.so"
+    exit 1
   '
 }
 
