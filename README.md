@@ -28,9 +28,9 @@ cd ets2-ats-ubuntu-server
 chmod +x install-server.sh update-server.sh
 ```
 
-Run the installer: `sudo ./install-truck-server.sh`
+Run the installer: `sudo ./install-server.sh`
 
-Update: `sudo ./update-truck-server.sh`
+Update: `sudo ./update-server.sh`
 
 ---
 
