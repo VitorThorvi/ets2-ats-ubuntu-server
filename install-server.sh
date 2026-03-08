@@ -119,8 +119,22 @@ install_server() {
   mkdir -p "${INSTALL_DIR}"
   chown -R "${STEAM_USER}:${STEAM_USER}" "${INSTALL_DIR}"
 
+  local steamcmd_bin=""
+  if command -v steamcmd >/dev/null 2>&1; then
+    steamcmd_bin="$(command -v steamcmd)"
+  elif [[ -x /usr/games/steamcmd ]]; then
+    steamcmd_bin="/usr/games/steamcmd"
+  elif [[ -x /usr/lib/games/steamcmd ]]; then
+    steamcmd_bin="/usr/lib/games/steamcmd"
+  elif [[ -x /usr/lib/games/steamcmd/steamcmd.sh ]]; then
+    steamcmd_bin="/usr/lib/games/steamcmd/steamcmd.sh"
+  else
+    print_error "steamcmd binary not found after installation."
+    exit 1
+  fi
+
   sudo -u "${STEAM_USER}" bash -lc \
-    "steamcmd +force_install_dir '${INSTALL_DIR}' +login anonymous +app_update ${APP_ID} validate +quit"
+    "\"${steamcmd_bin}\" +force_install_dir '${INSTALL_DIR}' +login anonymous +app_update ${APP_ID} validate +quit"
 }
 
 setup_steamclient_link() {
