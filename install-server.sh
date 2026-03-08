@@ -150,48 +150,20 @@ setup_steamclient_link() {
     mkdir -p "$HOME/.steam/sdk64"
     mkdir -p "$HOME/.steam"
 
-    for candidate in \
-      "$HOME/Steam/linux64/steamclient.so" \
-      "$HOME/.local/share/Steam/linux64/steamclient.so" \
-      "$HOME/steamcmd/linux64/steamclient.so" \
-      "/usr/lib/games/steamcmd/linux64/steamclient.so" \
-      "/usr/lib/games/steamcmd/steamcmd.sh" \
-      "/usr/games/steamcmd"
-    do
-      if [[ -f "$candidate" ]]; then
-        case "$candidate" in
-          */steamcmd.sh)
-            base_dir="$(dirname "$candidate")"
-            if [[ -f "$base_dir/linux64/steamclient.so" ]]; then
-              ln -sfn "$base_dir/linux64/steamclient.so" "$HOME/.steam/sdk64/steamclient.so"
-              echo "Linked from $base_dir/linux64/steamclient.so"
-              exit 0
-            fi
-            ;;
-          */steamcmd)
-            base_dir="$(dirname "$candidate")"
-            if [[ -f "$base_dir/linux64/steamclient.so" ]]; then
-              ln -sfn "$base_dir/linux64/steamclient.so" "$HOME/.steam/sdk64/steamclient.so"
-              echo "Linked from $base_dir/linux64/steamclient.so"
-              exit 0
-            fi
-            ;;
-          *)
-            ln -sfn "$candidate" "$HOME/.steam/sdk64/steamclient.so"
-            echo "Linked from $candidate"
-            exit 0
-            ;;
-        esac
-      fi
-    done
+    steamclient_path="$(find "$HOME" /usr/lib /usr/games \
+      -type f -name steamclient.so 2>/dev/null \
+      | grep -E "/(linux64|sdk64)/steamclient\.so$" \
+      | head -n 1 || true)"
 
-    echo "steamclient.so not found in expected locations."
-    echo "Searched:"
-    echo "  $HOME/Steam/linux64/steamclient.so"
-    echo "  $HOME/.local/share/Steam/linux64/steamclient.so"
-    echo "  $HOME/steamcmd/linux64/steamclient.so"
-    echo "  /usr/lib/games/steamcmd/linux64/steamclient.so"
-    exit 1
+    if [[ -n "${steamclient_path}" && -f "${steamclient_path}" ]]; then
+      ln -sfn "${steamclient_path}" "$HOME/.steam/sdk64/steamclient.so"
+      echo "Linked from ${steamclient_path}"
+      exit 0
+    fi
+
+    echo "steamclient.so not found automatically."
+    echo "Continuing anyway; launcher will use LD_LIBRARY_PATH fallback."
+    exit 0
   '
 }
 
@@ -203,20 +175,27 @@ create_launcher() {
 set -Eeuo pipefail
 
 INSTALL_DIR="${INSTALL_DIR}"
+STEAM_USER="${STEAM_USER}"
+
 cd "\${INSTALL_DIR}"
 
-# Prefer SCS helper launcher when present
+run_as_steam() {
+  exec sudo -u "\${STEAM_USER}" "\$@"
+}
+
+# Prefer SCS launcher if present
 if [[ -x "./server_launch.sh" ]]; then
-  exec sudo -u ${STEAM_USER} ./server_launch.sh "\$@"
+  run_as_steam ./server_launch.sh "\$@"
 fi
 
-# Fallback: search common binary locations
-if [[ -x "./${BINARY_NAME}" ]]; then
-  exec sudo -u ${STEAM_USER} "./${BINARY_NAME}" "\$@"
-fi
-
+# ETS2 / ATS direct binary fallback with library path workaround
 if [[ -x "./bin/linux_x64/${BINARY_NAME}" ]]; then
-  exec sudo -u ${STEAM_USER} "./bin/linux_x64/${BINARY_NAME}" "\$@"
+  cd "./bin/linux_x64"
+  run_as_steam env LD_LIBRARY_PATH="\$ORIGIN/../../linux64:\${LD_LIBRARY_PATH:-}" "./${BINARY_NAME}" "\$@"
+fi
+
+if [[ -x "./${BINARY_NAME}" ]]; then
+  run_as_steam env LD_LIBRARY_PATH="\${INSTALL_DIR}/linux64:\${LD_LIBRARY_PATH:-}" "./${BINARY_NAME}" "\$@"
 fi
 
 echo "Could not find a launchable server binary in:"
@@ -331,7 +310,7 @@ main() {
   prepare_system
   ensure_steam_user
   install_server
-  setup_steamclient_link
+  setup_steamclient_link || true
   create_launcher
   create_homedir_hint
   maybe_create_systemd_service
